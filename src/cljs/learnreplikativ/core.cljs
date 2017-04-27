@@ -67,7 +67,7 @@
                                                       (or (= (.-which e) 13)
                                                           (= (.-keyCode e) 13))
                                                       (send-message!
-                                                        app-state (create-msg input-name input-text))
+                                                        mydb/val-atom (create-msg input-name input-text))
                                                       (om/update-state! comp assoc :input-text "")))
                              :value input-text}))))
 
@@ -78,7 +78,7 @@
                {:label "Send"
                 :on-touch-tap
                        #(do
-                          (send-message! app-state (create-msg input-name input-text))
+                          (send-message! mydb/val-atom (create-msg input-name input-text))
                           (om/update-state! comp assoc :input-text ""))}))))
 
 (defn message-item [{:keys [text name date]}]
@@ -116,6 +116,7 @@
                                    (message-field this input-text input-name)
                                    (send-button this input-text input-name)
                                    (ui/subheader nil "Messages")
+                                   ;(dom/div nil (str app-state))
                                    (mapv message-item (sort-by :date > (vals app-state)))
                                    (ui/divider nil)))]])))))
 
@@ -124,8 +125,8 @@
 
 (defn main [& args]
   (go-try S
-          (def client-state (<? S (mydb/setup-replikativ)))
-          (.error js/console "INITED")))
+          (def client-state (<? S (mydb/setup-replikativ)))))
+          ;(.error js/console "INITED")))
 
 ;; for figwheel not in main
 (om/add-root! reconciler App (.getElementById js/document "app"))

@@ -31,7 +31,10 @@
 
 
 (defonce val-atom (atom {}))
+(defonce my-atom (atom {}))
 
+(add-watch val-atom :key #(.log js/console "thinh print val-atom: " @val-atom))
+;(add-watch my-atom :key #(.log js/console "thinh print my-atom: " @my-atom))
 
 (defn setup-replikativ []
   (go-try S
@@ -50,6 +53,7 @@
              :stage stage
              :stream stream
              :peer local-peer})))
+
 
 
 
