@@ -1,14 +1,5 @@
 (ns learnreplikativ.core
-  (:require [konserve.memory :refer [new-mem-store]]
-            [replikativ.peer :refer [client-peer]]
-            [replikativ.stage :refer [create-stage! connect!
-                                      subscribe-crdts!]]
-
-            [hasch.core :refer [uuid]]
-            [replikativ.crdt.ormap.realize :refer [stream-into-identity!]]
-            [replikativ.crdt.ormap.stage :as s]
-            [cljs.core.async :refer [>! chan timeout]]
-            [superv.async :refer [S] :as sasync]
+  (:require [hasch.core :refer [uuid]]
             [cljsjs.material-ui] ;; TODO why?
             [om.next :as om :refer-macros [defui] :include-macros true]
             [om.dom :as dom :include-macros true]
@@ -16,60 +7,22 @@
             [cljs-react-material-ui.icons :as ic]
             [sablono.core :as html :refer-macros [html]]
             [cljs-react-material-ui.core :as ui]
-            [cljs-react-material-ui.icons :as ic])
+            [cljs-react-material-ui.icons :as ic]
+            [superv.async :refer [S] :as sasync]
+            [replikativ.crdt.ormap.stage :as s]
+            [learnreplikativ.db :as mydb])
   (:require-macros [superv.async :refer [go-try <? go-loop-try]]
                    [cljs.core.async.macros :refer [go-loop]]))
 
-;; 1. app constants
-(def user "mail:alice@replikativ.io")
-(def ormap-id #uuid "7d274663-9396-4247-910b-409ae35fe98d")
-(def uri "ws://127.0.0.1:31744")
-
-
-(enable-console-print!)
-
-;; Have a look at the replikativ "Get started" tutorial to understand how the
-;; replikativ parts work: http://replikativ.io/tut/get-started.html
-
-(def stream-eval-fns
-  {'assoc (fn [a new]
-            (swap! a assoc (uuid new) new)
-            a)
-   'dissoc (fn [a new]
-             (swap! a dissoc (uuid new))
-             a)})
-
-
-(defonce val-atom (atom {}))
-
-
-(defn setup-replikativ []
-  (go-try S
-          (let [local-store (<? S (new-mem-store))
-                local-peer (<? S (client-peer S local-store))
-                stage (<? S (create-stage! user local-peer))
-                stream (stream-into-identity! stage
-                                              [user ormap-id]
-                                              stream-eval-fns
-                                              val-atom)]
-            (<? S (s/create-ormap! stage
-                                   :description "messages"
-                                   :id ormap-id))
-            (connect! stage uri)
-            {:store local-store
-             :stage stage
-             :stream stream
-             :peer local-peer})))
-
+;; Setup on client to communicate.
 (declare client-state)
 ;; this is the only state changing function
 (defn send-message! [app-state msg]
   (s/assoc! (:stage client-state)
-            [user ormap-id]
+            [mydb/user mydb/ormap-id]
             (uuid msg)
             [['assoc msg]]))
-
-
+;; Don't touch to the part above.
 
 
 ;; helper functions
@@ -167,11 +120,11 @@
                                    (ui/divider nil)))]])))))
 
 (def reconciler
-  (om/reconciler {:state val-atom}))
+  (om/reconciler {:state mydb/val-atom}))
 
 (defn main [& args]
   (go-try S
-          (def client-state (<? S (setup-replikativ)))
+          (def client-state (<? S (mydb/setup-replikativ)))
           (.error js/console "INITED")))
 
 ;; for figwheel not in main
