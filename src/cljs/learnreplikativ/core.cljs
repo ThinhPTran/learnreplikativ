@@ -1,5 +1,6 @@
 (ns learnreplikativ.core
-  (:require [hasch.core :refer [uuid]]
+  (:require [goog.dom :as gdom]
+            [hasch.core :refer [uuid]]
             [cljsjs.material-ui] ;; TODO why?
             [om.next :as om :refer-macros [defui] :include-macros true]
             [om.dom :as dom :include-macros true]
@@ -10,123 +11,396 @@
             [cljs-react-material-ui.icons :as ic]
             [superv.async :refer [S] :as sasync]
             [replikativ.crdt.ormap.stage :as s]
+            [learnreplikativ.utils :as utils]
+            [learnreplikativ.events :as events]
             [learnreplikativ.db :as mydb])
   (:require-macros [superv.async :refer [go-try <? go-loop-try]]
                    [cljs.core.async.macros :refer [go-loop]]))
 
-;; Setup on client to communicate.
-(declare client-state)
-;; this is the only state changing function
-(defn send-message! [app-state msg]
-  (s/assoc! (:stage client-state)
-            [mydb/user mydb/ormap-id]
-            (uuid msg)
-            [['assoc msg]]))
-;; Don't touch to the part above.
+(def debug?
+  ^boolean js/goog.DEBUG)
+
+(defn dev-setup []
+  (when debug?
+    (enable-console-print!)
+    (println "dev mode")))
+
+;; User names
+(defn usernamesread
+  [{:keys [state] :as env} key params]
+  (let [st @state]
+    (if-let [[_ v] (find st key)]
+      {:value v}
+      {:value :not-found})))
+
+(defmulti usernamesmutate om/dispatch)
+
+(defmethod usernamesmutate `get-usernames
+  [{:keys [state] :as env} key params]
+  {:action
+   (fn []
+     (events/get-usernames))})
+
+(defui UserItems
+  Object
+  (render [this]
+    (let [{:keys [name]} (om/props this)]
+      (dom/li nil (str name)))))
+
+(def ui-useritems (om/factory UserItems {:keyfn :name}))
+
+(defui UserNames
+  static om/IQuery
+  (query [_]
+    [:user/names])
+  Object
+  (render [this]
+    (let [{:keys [user/names]} (om/props this)]
+      (dom/div nil
+               (dom/h2 nil "User names: ")
+               (dom/button
+                 #js {:id "btn-login"
+                      :type "button"
+                      :onClick (fn [_]
+                                 (om/transact! this `[(get-usernames)]))}
+                 "Get usernames")
+               (apply dom/ul nil
+                      (map #(ui-useritems {:react-key %
+                                           :name %})
+                           names))))))
+
+(def usernamesreconciler
+  (om/reconciler {:state mydb/global-users
+                  :parser (om/parser {:read usernamesread :mutate usernamesmutate})}))
+
+(om/add-root! usernamesreconciler
+              UserNames (gdom/getElement "usernames"))
+
+;; Slider
+(defn mysliderread
+  [{:keys [state] :as env} key params]
+  (let [st @state]
+    (if-let [[_ v] (find st key)]
+      {:value v}
+      {:value :not-found})))
+
+(defmulti myslidermutate om/dispatch)
+
+(defmethod myslidermutate `view-history
+  [{:keys [state] :as env} key {:keys [currentpick]}]
+  {:action
+   (fn []
+     (.log js/console "Current Pick: " currentpick)
+     (events/set-history-point currentpick))})
+
+(defui MySlider
+  static om/IQuery
+  (query [this]
+    [:totalactions :currentpick :totallistactions])
+  Object
+  (render [this]
+    (let [{:keys [totalactions currentpick totallistactions]} (om/props this)
+          username (if (= currentpick 0) "No Information" (:action/user (get totallistactions (- currentpick 1))))
+          instant (if (= currentpick 0) "No Information" (:action/instant (get totallistactions (- currentpick 1))))]
+      (dom/div nil
+               (dom/input #js {:id "myrange"
+                               :type "range"
+                               :min 0
+                               :max totalactions
+                               :value currentpick
+                               :step 1
+                               :onChange (fn [_]
+                                           (let
+                                             [v (.-value (gdom/getElement "myrange"))]
+                                             (om/transact! this `[(view-history {:currentpick ~v})])))})
+               (dom/div nil (str "Username: " username))
+               (dom/div nil (str "at: " instant))))))
+
+(def sliderreconciler
+  (om/reconciler {:state mydb/global-states
+                  :parser (om/parser {:read mysliderread :mutate myslidermutate})}))
+
+(om/add-root! sliderreconciler
+              MySlider (gdom/getElement "actionslider"))
+
+;; Login form
+(defn loginread
+  [{:keys [state] :as env} key params]
+  (let [st @state]
+    (if-let [[_ v] (find st key)]
+      {:value v}
+      {:value :not-found})))
+
+(defmulti loginmutate om/dispatch)
+
+(defmethod loginmutate `update-text
+  [{:keys [state] :as env} key {:keys [mytext]}]
+  {:action
+   (fn []
+     (.log js/console mytext)
+     (swap! state assoc :input-text mytext))})
+
+(defmethod loginmutate `user-login
+  [{:keys [state] :as env} key {:keys [name]}]
+  {:action
+   (fn []
+     (events/user-login name))})
+
+(defui LoginForm
+  static om/IQuery
+  (query [_]
+    [:input-text :user/name])
+  Object
+  (render [this]
+    (let [{:keys [input-text user/name]} (om/props this)]
+      (dom/div nil
+               (dom/input
+                 #js {:id "my-input-box"
+                      :type "text"
+                      :value input-text
+                      :onChange (fn [_]
+                                  (let [v (.-value (gdom/getElement "my-input-box"))]
+                                    (.log js/console "change something!!!")
+                                    (om/transact! this `[(update-text {:mytext ~v})])))})
+               (dom/button
+                 #js {:id "btn-login"
+                      :type "button"
+                      :onClick (fn [_]
+                                 (om/transact! this `[(user-login {:name ~input-text})]))}
+                 "Secure login!")
+               (dom/div nil (str "input text: " input-text))
+               (dom/div nil (str "user name: " name))))))
+
+(def loginreconciler
+  (om/reconciler {:state mydb/local-login
+                  :parser (om/parser {:read loginread :mutate loginmutate})}))
+
+(om/add-root! loginreconciler
+              LoginForm (gdom/getElement "loginform"))
+
+;;; Handsontable
+(defn mytableread
+  [{:keys [state] :as env} key params]
+  (let [st @state]
+    (if-let [[_ value] (find st key)]
+      {:value value}
+      {:value :not-found})))
+
+(defmulti mytablemutate om/dispatch)
+
+(defmethod mytablemutate `settablevalue
+  [{:keys [state] :as env} key {:keys [changeDatas]}]
+  {:action (fn []
+             ;(.log js/console "mytablemutate: " changeDatas)
+             (events/set-action changeDatas))})
+
+;(defui MyGlobalTable
+(defui MyGlobalTable
+  static om/IQuery
+  (query [this]
+    [:tableconfig])
+  Object
+  (render [this]
+    (let [{:keys [tableconfig]} (om/props this)
+          table (atom {:table nil})]
+      (dom/div
+        #js {:style {:min-width "310px" :max-width "800px" :margin "0 auto"}
+             :ref (fn [mydiv]
+                    (if (some? mydiv)
+                      (swap! table assoc :table (js/Handsontable mydiv (clj->js
+                                                                         (assoc-in tableconfig
+                                                                                   [:afterChange]
+                                                                                   #(do
+                                                                                      (let [changeData (js->clj %)]
+                                                                                        (om/transact! this `[(settablevalue {:changeDatas ~changeData})])))))))
+                      (let [mytable (:table @table)]
+                        (if (some? mytable)
+                          (do
+                            (.destroy mytable)
+                            (swap! table assoc :table nil))))))}))))
+
+(def myglobaltablereconciler
+  (om/reconciler {:state mydb/global-states
+                  :parser (om/parser {:read mytableread :mutate mytablemutate})}))
+
+(om/add-root! myglobaltablereconciler
+              MyGlobalTable (gdom/getElement "myglobaltable"))
+
+;;; Highchart
+(defui MyGlobalChart
+  Object
+  (render [this]
+    (let [{:keys [tableconfig]} (om/props this)
+          my-chart-config (utils/gen-chart-config-handson tableconfig)
+          chart (atom {:chart nil})]
+      (dom/div
+        #js {:style {:height "100%" :width "100%" :position "relative"}
+             :ref (fn [mydiv]
+                    (if (some? mydiv)
+                      (swap! chart assoc :chart (js/Highcharts.Chart. mydiv (clj->js @my-chart-config)))
+                      (let [mychart (:chart @chart)]
+                        (if (some? mychart)
+                          (do
+                            (.destroy mychart)
+                            (swap! chart :chart nil))))))}))))
+
+(def myglobalchartreconciler
+  (om/reconciler {:state mydb/global-states}))
+
+(om/add-root! myglobalchartreconciler
+              MyGlobalChart (gdom/getElement "mylocalchart"))
+
+;; local transactions
+(defui LocalTransactItem
+  Object
+  (render [this]
+    (let [{:keys [name instant]} (om/props this)]
+      (dom/li nil (str name " changed at " instant)))))
+
+(def ui-localtransactitems (om/factory LocalTransactItem {:keyfn :instant}))
+
+(defui LocalTransacts
+  Object
+  (render [this]
+    (let [{:keys [listactions]} (om/props this)]
+      (dom/div nil
+               (dom/h2 nil "Local actions: ")
+               ;(dom/div nil (str (om/props this)))
+               (apply dom/ul nil
+                      (map #(ui-localtransactitems {:react-key (:inst %)
+                                                    :name (:user %)
+                                                    :instant (:inst %)})
+                           listactions))))))
+
+(def localtransactionreconciler
+  (om/reconciler {:state mydb/local-states}))
+
+(om/add-root! localtransactionreconciler
+              LocalTransacts (gdom/getElement "localtransaction"))
 
 
-;; helper functions
-(defn format-time [d]
-  (let [secs (-> (.getTime (js/Date.))
-                 (- d)
-                 (/ 1000)
-                 js/Math.floor)]
-    (cond
-      (>= secs 3600) (str (js/Math.floor (/ secs 3600)) " hours ago")
-      (>= secs 60) (str (js/Math.floor (/ secs 60)) " minutes ago")
-      (>= secs 0) (str  " seconds ago"))))
+;;;; Handsontable
+(defn mylocaltableread
+  [{:keys [state] :as env} key params]
+  (let [st @state]
+    (if-let [[_ value] (find st key)]
+      {:value value}
+      {:value :not-found})))
 
-;; Material UI with Om
-(defn create-msg [name text]
-  {:text text
-   :name name
-   :date (.getTime (js/Date.))})
+(defmulti mylocaltablemutate om/dispatch)
 
-(defn target-val [e]
-  (.. e -target -value))
+(defmethod mylocaltablemutate `settablevalue
+  [{:keys [state] :as env} key {:keys [changeDatas]}]
+  {:action (fn []
+             (events/set-action changeDatas))})
 
-(defn name-field [comp input-name]
-  (dom/div #js {:className "center-xs"}
-           (ui/text-field
-             {:floating-label-text "Name"
-              :class-name "w-80"
-              :on-change #(om/update-state! comp assoc :input-name (target-val %))
-              :value input-name})))
+(defui MyLocalTable
+  static om/IQuery
+  (query [this]
+    [:tableconfig])
+  Object
+  (render [this]
+    (let [{:keys [tableconfig]} (om/props this)
+          table (atom {:table nil})]
+      (dom/div
+        #js {:style {:min-width "310px" :max-width "800px" :margin "0 auto"}
+             :ref (fn [mydiv]
+                    (if (some? mydiv)
+                      (swap! table assoc :table (js/Handsontable mydiv (clj->js
+                                                                         (assoc-in tableconfig
+                                                                                   [:afterChange]
+                                                                                   #(do
+                                                                                      (let [changeData (js->clj %)]
+                                                                                        (om/transact! this `[(settablevalue {:changeDatas ~changeData})])))))))
+                      (let [mytable (:table @table)]
+                        (if (some? mytable)
+                          (do
+                            (.destroy mytable)
+                            (swap! table assoc :table nil))))))}))))
 
-(defn message-field [comp input-text input-name]
-  (let [app-state (om/props comp)]
-    (dom/div #js {:className "center-xs" :key "message"}
-             (ui/text-field {:floating-label-text "Message"
-                             :class-name "w-80"
-                             :on-change
-                                                  #(om/update-state!
-                                                     comp assoc :input-text (target-val %))
-                             :on-key-down
-                                                  (fn [e]
-                                                    (when
-                                                      (or (= (.-which e) 13)
-                                                          (= (.-keyCode e) 13))
-                                                      (send-message!
-                                                        mydb/val-atom (create-msg input-name input-text))
-                                                      (om/update-state! comp assoc :input-text "")))
-                             :value input-text}))))
+(def mylocaltablereconciler
+  (om/reconciler {:state mydb/local-states
+                  :parser (om/parser {:read mylocaltableread :mutate mylocaltablemutate})}))
 
-(defn send-button [comp input-text input-name]
-  (let [app-state (om/props comp)]
-    (dom/div #js {:className "center-xs"}
-             (ui/raised-button
-               {:label "Send"
-                :on-touch-tap
-                       #(do
-                          (send-message! mydb/val-atom (create-msg input-name input-text))
-                          (om/update-state! comp assoc :input-text ""))}))))
+(om/add-root! mylocaltablereconciler
+              MyLocalTable (gdom/getElement "mylocaltable"))
 
-(defn message-item [{:keys [text name date]}]
-  (ui/list-item {:primary-text
-                                       (dom/div nil name
-                                                (dom/small nil (str " wrote " (format-time date))))
-                 :secondary-text text
-                 :secondary-text-lines 2
-                 :key (uuid (str date))}))
+;;; Highchart
+(defui MyLocalChart
+  Object
+  (render [this]
+    (let [{:keys [tableconfig]} (om/props this)
+          my-chart-config (utils/gen-chart-config-handson tableconfig)
+          chart (atom {:chart nil})]
+      (dom/div
+        #js {:style {:height "100%" :width "100%" :position "relative"}
+             :ref (fn [mydiv]
+                    (if (some? mydiv)
+                      (swap! chart assoc :chart (js/Highcharts.Chart. mydiv (clj->js @my-chart-config)))
+                      (let [mychart (:chart @chart)]
+                        (if (some? mychart)
+                          (do
+                            (.destroy mychart)
+                            (swap! chart :chart nil))))))}))))
 
-;; React App
-(defui App
-       Object
-       (componentWillMount [this]
-                           (om/set-state!
-                             this
-                             {:input-name ""
-                              :input-text ""
-                              :snackbar {:message "hello"
-                                         :open false}}))
-       (render [this]
-               (let [app-state (om/props this)
-                     {:keys [input-name input-text snackbar]} (om/get-state this)]
-                 (ui/mui-theme-provider
-                   {:mui-theme (ui/get-mui-theme)}
-                   (html
-                     [:div.col-xs-12.mar-top-10.row
-                      (ui/snackbar {:open (:open snackbar) :message (:message snackbar)})
-                      [:div.col-xs-3]
-                      [:div.col-xs-6
-                       (ui/paper {:className "mar-top-20"}
-                                 (ui/list
-                                   nil
-                                   (name-field this input-name)
-                                   (message-field this input-text input-name)
-                                   (send-button this input-text input-name)
-                                   (ui/subheader nil "Messages")
-                                   ;(dom/div nil (str app-state))
-                                   (mapv message-item (sort-by :date > (vals app-state)))
-                                   (ui/divider nil)))]])))))
+(def mylocalchartreconciler
+  (om/reconciler {:state mydb/local-states}))
 
-(def reconciler
-  (om/reconciler {:state mydb/val-atom}))
+(om/add-root! mylocalchartreconciler
+              MyLocalChart (gdom/getElement "myglobalchart"))
 
-(defn main [& args]
-  (go-try S
-          (def client-state (<? S (mydb/setup-replikativ)))))
-          ;(.error js/console "INITED")))
+;; Cummulative transactions
+(defn cumtransactionread
+  [{:keys [state] :as env} key params]
+  (let [st @state]
+    (if-let [[_ value] (find st key)]
+      {:value value}
+      {:value :not-found})))
 
-;; for figwheel not in main
-(om/add-root! reconciler App (.getElementById js/document "app"))
+(defmulti cumtransactionmutate om/dispatch)
+
+(defmethod cumtransactionmutate `get-cum-actions
+  [{:keys [state] :as env} key params]
+  {:action (fn []
+             (events/get-cum-actions))})
+
+(defui CumTransactItem
+  Object
+  (render [this]
+    (let [{:keys [name instant]} (om/props this)]
+      (when (and name instant)
+        (dom/li nil (str name " changed at " instant))))))
+
+(def ui-cumtransactitems (om/factory CumTransactItem {:keyfn :instant}))
+
+(defui CumTransacts
+  static om/IQuery
+  (query [this]
+    [:listactions])
+  Object
+  (render [this]
+    (let [{:keys [listactions]} (om/props this)]
+      (dom/div nil
+               (dom/h2 nil "Cummulative actions: ")
+               (dom/button
+                 #js {:id "btn-login"
+                      :type "button"
+                      :onClick (fn [_]
+                                 (om/transact! this `[(get-cum-actions)]))}
+                 "Get Cum Actions")
+               (apply dom/ul nil
+                      (map #(ui-cumtransactitems {:react-key (:inst %)
+                                                  :name (:user %)
+                                                  :instant (:inst %)})
+                           listactions))))))
+
+(def cumtransactionreconciler
+  (om/reconciler {:state mydb/global-states
+                  :parser (om/parser {:read cumtransactionread :mutate cumtransactionmutate})}))
+
+(om/add-root! cumtransactionreconciler
+              CumTransacts (gdom/getElement "cumtransaction"))
+
+(defn ^:export main [& args]
+  (dev-setup)
+  (mydb/setupclientdata))
