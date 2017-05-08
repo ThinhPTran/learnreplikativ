@@ -1,5 +1,6 @@
 (ns learnreplikativ.db
   (:require [hasch.core :refer [uuid]]
+            [reagent.core :as r]
             [konserve.memory :refer [new-mem-store]]
             [replikativ.peer :refer [client-peer]]
             [replikativ.stage :refer [create-stage! connect!
@@ -31,7 +32,7 @@
   (atom {:tableconfig init-tableconfig}))
 
 (def global-users
-  (atom {:user/names ["No users"]}))
+  (r/atom {:user/names ["No users"]}))
 
 (def local-login
   (atom {:user/name nil
