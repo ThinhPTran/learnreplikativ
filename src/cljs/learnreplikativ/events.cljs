@@ -42,4 +42,5 @@
 
 (defn set-history-point [idx]
   (do
-    (.log js/console "set-history-point!!!")))
+    ;(.log js/console "set-history-point!!!" idx)
+    (swap! mydb/global-states assoc :currentpick idx)))

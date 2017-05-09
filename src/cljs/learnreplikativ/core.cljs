@@ -142,8 +142,8 @@
   (let [totalactions (:totalactions @mydb/global-states)
         currentpick (:currentpick @mydb/global-states)
         totallistactions (:totallistactions @mydb/global-states)
-        username (if (= currentpick 0) "No Information" (:action/user (get totallistactions (- currentpick 1))))
-        instant (if (= currentpick 0) "No Information" (:action/instant (get totallistactions (- currentpick 1))))]
+        username (if (= currentpick 0) "No Information" (:user (get totallistactions (- currentpick 1))))
+        instant (if (= currentpick 0) "No Information" (:inst (get totallistactions (- currentpick 1))))]
     [:div.col-sm-12
      [:input#myrange {:type "range"
                       :min 0
@@ -153,7 +153,8 @@
                       :onChange (fn [_]
                                   (let
                                     [v (.-value (gdom/getElement "myrange"))]
-                                    (.log js/console "value: " v)))}]
+                                    ;(.log js/console "value: " v)
+                                    (events/set-history-point (js/parseInt v))))}]
      [:div (str "Username: " username)]
      [:div (str "at: " instant)]]))
 
