@@ -1,5 +1,6 @@
 (ns learnreplikativ.db
-  (:require [konserve.memory :refer [new-mem-store]]
+  (:require [hasch.core :refer [uuid]]
+            [konserve.memory :refer [new-mem-store]]
             [replikativ.peer :refer [client-peer]]
             [replikativ.stage :refer [create-stage! connect!
                                       subscribe-crdts!]]
@@ -56,7 +57,7 @@
 (defn send-message! [app-state msg]
   (s/assoc! (:stage client-state)
             [user ormap-id]
-            (random-uuid)
+            (uuid msg)
             [['assoc msg]]))
 ;;; Don't touch to the part above.
 
@@ -148,7 +149,7 @@
 
 (defn handle-table-actions [tableconfig action]
   (let [colIdx (:col action)]
-    (.log js/console "action: " action)
+    ;(.log js/console "action: " action)
     (cond
       (= 0 colIdx) (handle-user-change-MD tableconfig action)
       (= 1 colIdx) (handle-user-change-TVD tableconfig action)
@@ -158,8 +159,8 @@
   (let [myinitconfig (:tableconfig @globalconfig)
         newtableconfig (reduce (fn [indata action]
                                  (handle-table-actions indata action)) myinitconfig data)]
-    (.log js/console "myinitconfig: " myinitconfig)
-    (.log js/console "newtableconfig: " newtableconfig)
+    ;(.log js/console "myinitconfig: " myinitconfig)
+    ;(.log js/console "newtableconfig: " newtableconfig)
     (swap! global-states assoc :tableconfig newtableconfig)))
 
 (defn handle-local-table [data]
@@ -170,21 +171,24 @@
 
 (defn handle-addUser [addUserActions]
   (let [usernames (mapv #(get-in % [:val :name]) addUserActions)]
-    (.log js/console "usernames: " usernames)
+    ;(.log js/console "usernames: " usernames)
     (swap! global-users assoc :user/names usernames)))
 
 (defn handle-setTableVal [rawactions]
   (let [actions (mapv #(get % :val) rawactions)
+        Naction (count actions)
         user (:user/name @local-login)
         localactions (filterv #(= user (:user %)) actions)]
-    (.log js/console "setactions: " actions)
+    ;(.log js/console "setactions: " actions)
     (swap! local-states assoc :listactions localactions)
     (swap! global-states assoc :listactions actions)
+    (swap! global-states assoc :totallistactions actions)
+    (swap! global-states assoc :totalactions Naction)
+    (swap! global-states assoc :currentpick Naction)
     (handle-global-table actions)
     (handle-local-table localactions)))
 
 (defn handle-changes []
-  (.log js/console "app-state: " @app-state)
   (let [allactions (vals @app-state)
         user (:user/name @local-login)
         addUseractions (->> allactions
@@ -193,9 +197,9 @@
         setTableValacts (->> allactions
                          (filterv #(= :setTableVal (:act %)))
                          (sort #(compare (:inst %1) (:inst %2))))]
-    (.log js/console "all actions: " allactions)
-    (.log js/console "addUser actions: " addUseractions)
-    (.log js/console "setTableVal actions: " setTableValacts)
+    ;(.log js/console "all actions: " allactions)
+    ;(.log js/console "addUser actions: " addUseractions)
+    ;(.log js/console "setTableVal actions: " setTableValacts)
     (handle-addUser addUseractions)
     (if (some? user)
        (handle-setTableVal setTableValacts))))
