@@ -1,5 +1,6 @@
 (ns learnreplikativ.db
   (:require [hasch.core :refer [uuid]]
+            [reagent.core :as r]
             [konserve.memory :refer [new-mem-store]]
             [replikativ.peer :refer [client-peer]]
             [replikativ.stage :refer [create-stage! connect!
@@ -31,25 +32,24 @@
   (atom {:tableconfig init-tableconfig}))
 
 (def global-users
-  (atom {:user/names ["No users"]}))
+  (r/atom {:user/names ["No users"]}))
 
 (def local-login
-  (atom {:user/name nil
-         :input-text "sample input"}))
+  (r/atom {:user/name nil
+           :input-text "sample input"}))
 
 (def global-states
-  (atom {:name "Global cummulative states"
-         :totalactions 0
-         :currentpick 0
-         :tableconfig init-tableconfig
-         :totallistactions ["No actions"]
-         :listactions ["No actions"]}))
+  (r/atom {:name "Global cummulative states"
+           :totalactions 0
+           :currentpick 0
+           :tableconfig init-tableconfig
+           :totallistactions ["No actions"]
+           :listactions ["No actions"]}))
 
 (def local-states
-  (atom {:name "Local user states"
-         :tableconfig init-tableconfig
-         :listactions nil}))
-
+  (r/atom {:name "Local user states"
+           :tableconfig init-tableconfig
+           :listactions nil}))
 
 ;;; Setup on client to communicate.
 (declare client-state)

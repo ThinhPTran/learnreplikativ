@@ -3,13 +3,22 @@
             [learnreplikativ.db :as mydb :refer [send-message! app-state]]
             [learnreplikativ.utils :as utils :refer [create-msg]]))
 
+(defn in?
+  "true if coll contains elm"
+  [coll elm]
+  (some #(= elm %) coll))
+
 (defn user-login [name]
   (if (str/blank? name)
     (js/alert "Please enter a user name")
     (do
       (.log js/console (str "Logging in with user: " name))
       (swap! mydb/local-login assoc :user/name name)
-      (send-message! app-state (create-msg :addUser {:name name :pass "mypass"})))))
+      (let [usernames (:user/names @mydb/global-users)]
+        (.log js/console (str "Usernames: " usernames))
+        (if (in? usernames name)
+          (.log js/console (str "User existed!!!"))
+          (send-message! app-state (create-msg :addUser {:name name :pass "mypass"})))))))
 
 (defn get-usernames []
   (do
@@ -33,4 +42,5 @@
 
 (defn set-history-point [idx]
   (do
-    (.log js/console "set-history-point!!!")))
+    ;(.log js/console "set-history-point!!!" idx)
+    (swap! mydb/global-states assoc :currentpick idx)))
